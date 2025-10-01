@@ -1,0 +1,10 @@
+# Config directory
+.config/
+
+# Temp files
+*.tmp
+*.log
+
+# IDE
+.vscode/
+.idea/
