@@ -1,0 +1,343 @@
+#!/bin/bash
+
+# Temporary Email CLI Manager
+# Manages temporary email addresses using various services
+
+VERSION="1.0.0"
+DATA_DIR="$HOME/.config/tempmail"
+EMAIL_LIST="$DATA_DIR/emails.json"
+CURRENT_EMAIL="$DATA_DIR/current_email"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Initialize data directory
+init_data_dir() {
+    mkdir -p "$DATA_DIR"
+    if [ ! -f "$EMAIL_LIST" ]; then
+        echo "[]" > "$EMAIL_LIST"
+    fi
+}
+
+# Print colored message
+print_msg() {
+    local color=$1
+    shift
+    echo -e "${color}$@${NC}"
+}
+
+# Generate random email name
+generate_random_name() {
+    local adjectives=("swift" "brave" "clever" "bright" "cosmic" "digital" "electric" "frozen" "golden" "happy")
+    local nouns=("tiger" "falcon" "dragon" "phoenix" "wolf" "eagle" "lion" "shark" "panda" "cobra")
+    local adj=${adjectives[$RANDOM % ${#adjectives[@]}]}
+    local noun=${nouns[$RANDOM % ${#nouns[@]}]}
+    local num=$((RANDOM % 999))
+    echo "${adj}${noun}${num}"
+}
+
+# Check if email exists in list
+email_exists() {
+    local email=$1
+    jq -e --arg email "$email" '.[] | select(.email == $email)' "$EMAIL_LIST" > /dev/null 2>&1
+}
+
+# Create new temporary email using 1secmail.com API
+create_email() {
+    print_msg "$BLUE" "🎯 Creating temporary email address..."
+    
+    local username=""
+    
+    # Ask for custom name or generate random
+    read -p "Enter email name (leave empty for random): " custom_name
+    
+    if [ -z "$custom_name" ]; then
+        username=$(generate_random_name)
+    else
+        username="$custom_name"
+    fi
+    
+    # Get available domains from 1secmail
+    local domains=$(curl -s "https://www.1secmail.com/api/v1/?action=getDomainList" | jq -r '.[]' | head -5)
+    
+    if [ -z "$domains" ]; then
+        print_msg "$RED" "❌ Failed to fetch domains. Using default domain."
+        domains="1secmail.com"
+    fi
+    
+    # Select first domain
+    local domain=$(echo "$domains" | head -1)
+    local email="${username}@${domain}"
+    
+    # Check if email already exists in our list
+    if email_exists "$email"; then
+        print_msg "$YELLOW" "⚠️  Email already exists in your list!"
+        read -p "Do you want to create another one? (y/n): " response
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            create_email
+            return
+        else
+            return 1
+        fi
+    fi
+    
+    # Save email to list
+    local timestamp=$(date +%s)
+    local entry=$(jq -n \
+        --arg email "$email" \
+        --arg username "$username" \
+        --arg domain "$domain" \
+        --arg created "$(date -Iseconds)" \
+        --arg timestamp "$timestamp" \
+        '{email: $email, username: $username, domain: $domain, created: $created, timestamp: $timestamp}')
+    
+    jq --argjson entry "$entry" '. += [$entry]' "$EMAIL_LIST" > "$EMAIL_LIST.tmp" && mv "$EMAIL_LIST.tmp" "$EMAIL_LIST"
+    
+    # Set as current email
+    echo "$email" > "$CURRENT_EMAIL"
+    
+    print_msg "$GREEN" "✅ Email created successfully!"
+    print_msg "$GREEN" "📧 Email: $email"
+    print_msg "$BLUE" "💾 Saved to list and set as current"
+}
+
+# List all emails
+list_emails() {
+    print_msg "$BLUE" "📋 Your temporary email addresses:"
+    echo ""
+    
+    local count=$(jq 'length' "$EMAIL_LIST")
+    
+    if [ "$count" -eq 0 ]; then
+        print_msg "$YELLOW" "No emails found. Create one with: tempmail create"
+        return
+    fi
+    
+    local current=""
+    if [ -f "$CURRENT_EMAIL" ]; then
+        current=$(cat "$CURRENT_EMAIL")
+    fi
+    
+    jq -r '.[] | "\(.email)|\(.created)"' "$EMAIL_LIST" | while IFS='|' read -r email created; do
+        if [ "$email" = "$current" ]; then
+            print_msg "$GREEN" "➤ $email (current) - Created: $created"
+        else
+            echo "  $email - Created: $created"
+        fi
+    done
+}
+
+# Delete email
+delete_email() {
+    local email=$1
+    
+    if [ -z "$email" ]; then
+        print_msg "$RED" "❌ Please specify an email to delete"
+        echo "Usage: tempmail delete <email>"
+        return 1
+    fi
+    
+    if ! email_exists "$email"; then
+        print_msg "$RED" "❌ Email not found in list"
+        return 1
+    fi
+    
+    jq --arg email "$email" 'map(select(.email != $email))' "$EMAIL_LIST" > "$EMAIL_LIST.tmp" && mv "$EMAIL_LIST.tmp" "$EMAIL_LIST"
+    
+    # Clear current email if it was deleted
+    if [ -f "$CURRENT_EMAIL" ] && [ "$(cat "$CURRENT_EMAIL")" = "$email" ]; then
+        rm "$CURRENT_EMAIL"
+    fi
+    
+    print_msg "$GREEN" "✅ Email deleted: $email"
+}
+
+# Check inbox for current email
+check_inbox() {
+    local email=""
+    
+    if [ -n "$1" ]; then
+        email="$1"
+    elif [ -f "$CURRENT_EMAIL" ]; then
+        email=$(cat "$CURRENT_EMAIL")
+    else
+        print_msg "$RED" "❌ No email specified and no current email set"
+        echo "Usage: tempmail inbox [email]"
+        return 1
+    fi
+    
+    # Extract username and domain
+    local username=$(echo "$email" | cut -d'@' -f1)
+    local domain=$(echo "$email" | cut -d'@' -f2)
+    
+    print_msg "$BLUE" "📬 Checking inbox for: $email"
+    echo ""
+    
+    # Fetch messages
+    local messages=$(curl -s "https://www.1secmail.com/api/v1/?action=getMessages&login=$username&domain=$domain")
+    
+    local count=$(echo "$messages" | jq 'length')
+    
+    if [ "$count" -eq 0 ]; then
+        print_msg "$YELLOW" "📭 No messages found"
+        return
+    fi
+    
+    print_msg "$GREEN" "📨 Found $count message(s):"
+    echo ""
+    
+    echo "$messages" | jq -r '.[] | "ID: \(.id)\nFrom: \(.from)\nSubject: \(.subject)\nDate: \(.date)\n---"'
+}
+
+# Read specific email
+read_email() {
+    local email_id=$1
+    local email=""
+    
+    if [ -z "$email_id" ]; then
+        print_msg "$RED" "❌ Please specify an email ID"
+        echo "Usage: tempmail read <id> [email]"
+        return 1
+    fi
+    
+    if [ -n "$2" ]; then
+        email="$2"
+    elif [ -f "$CURRENT_EMAIL" ]; then
+        email=$(cat "$CURRENT_EMAIL")
+    else
+        print_msg "$RED" "❌ No email specified and no current email set"
+        return 1
+    fi
+    
+    local username=$(echo "$email" | cut -d'@' -f1)
+    local domain=$(echo "$email" | cut -d'@' -f2)
+    
+    print_msg "$BLUE" "📖 Reading email ID: $email_id from $email"
+    echo ""
+    
+    local message=$(curl -s "https://www.1secmail.com/api/v1/?action=readMessage&login=$username&domain=$domain&id=$email_id")
+    
+    echo "$message" | jq -r '"From: \(.from)\nTo: \(.to)\nSubject: \(.subject)\nDate: \(.date)\n\n\(.textBody)"'
+}
+
+# Set current email
+set_current() {
+    local email=$1
+    
+    if [ -z "$email" ]; then
+        print_msg "$RED" "❌ Please specify an email"
+        echo "Usage: tempmail use <email>"
+        return 1
+    fi
+    
+    if ! email_exists "$email"; then
+        print_msg "$RED" "❌ Email not found in list"
+        return 1
+    fi
+    
+    echo "$email" > "$CURRENT_EMAIL"
+    print_msg "$GREEN" "✅ Current email set to: $email"
+}
+
+# Show current email
+show_current() {
+    if [ -f "$CURRENT_EMAIL" ]; then
+        local email=$(cat "$CURRENT_EMAIL")
+        print_msg "$GREEN" "📧 Current email: $email"
+    else
+        print_msg "$YELLOW" "⚠️  No current email set"
+    fi
+}
+
+# Clear all emails
+clear_all() {
+    read -p "Are you sure you want to delete ALL emails? (yes/no): " confirm
+    if [ "$confirm" = "yes" ]; then
+        echo "[]" > "$EMAIL_LIST"
+        rm -f "$CURRENT_EMAIL"
+        print_msg "$GREEN" "✅ All emails cleared"
+    else
+        print_msg "$YELLOW" "❌ Operation cancelled"
+    fi
+}
+
+# Show help
+show_help() {
+    cat << HELP
+Temporary Email CLI Manager v${VERSION}
+
+Usage: tempmail <command> [options]
+
+Commands:
+  create              Create a new temporary email address
+  list                List all your temporary emails
+  delete <email>      Delete a specific email from your list
+  inbox [email]       Check inbox (uses current email if not specified)
+  read <id> [email]   Read a specific email by ID
+  use <email>         Set an email as current
+  current             Show current email
+  clear               Delete all emails from list
+  help                Show this help message
+
+Examples:
+  tempmail create
+  tempmail list
+  tempmail inbox
+  tempmail read 12345
+  tempmail delete user@domain.com
+  tempmail use user@domain.com
+
+Notes:
+  - Emails are temporary and will expire after some time
+  - Check inbox regularly as old messages may be deleted
+  - The service is free but has no guarantees
+
+HELP
+}
+
+# Main function
+main() {
+    init_data_dir
+    
+    case "${1:-help}" in
+        create)
+            create_email
+            ;;
+        list|ls)
+            list_emails
+            ;;
+        delete|del|rm)
+            delete_email "$2"
+            ;;
+        inbox|check)
+            check_inbox "$2"
+            ;;
+        read|show)
+            read_email "$2" "$3"
+            ;;
+        use|set)
+            set_current "$2"
+            ;;
+        current)
+            show_current
+            ;;
+        clear)
+            clear_all
+            ;;
+        help|--help|-h)
+            show_help
+            ;;
+        *)
+            print_msg "$RED" "❌ Unknown command: $1"
+            echo ""
+            show_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
