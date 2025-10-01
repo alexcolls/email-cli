@@ -234,13 +234,31 @@ set_current() {
         return 1
     fi
     
-    if ! email_exists "$email"; then
-        print_msg "$RED" "❌ Email not found in list"
-        return 1
+    # Try exact match first
+    if email_exists "$email"; then
+        echo "$email" > "$CURRENT_EMAIL"
+        print_msg "$GREEN" "✅ Current email set to: $email"
+        return 0
     fi
     
-    echo "$email" > "$CURRENT_EMAIL"
-    print_msg "$GREEN" "✅ Current email set to: $email"
+    # Try partial match (username part)
+    local matches=$(jq -r --arg pattern "$email" '.[] | select(.email | contains($pattern)) | .email' "$EMAIL_LIST")
+    local match_count=$(echo "$matches" | grep -c .)
+    
+    if [ "$match_count" -eq 0 ]; then
+        print_msg "$RED" "❌ Email not found in list"
+        return 1
+    elif [ "$match_count" -eq 1 ]; then
+        local found_email="$matches"
+        echo "$found_email" > "$CURRENT_EMAIL"
+        print_msg "$GREEN" "✅ Current email set to: $found_email"
+        return 0
+    else
+        print_msg "$YELLOW" "⚠️  Multiple matches found:"
+        echo "$matches" | nl
+        print_msg "$YELLOW" "Please be more specific or use the full email address"
+        return 1
+    fi
 }
 
 # Show current email
