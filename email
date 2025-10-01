@@ -3,10 +3,11 @@
 # Temporary Email CLI Manager
 # Manages temporary email addresses using various services
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 DATA_DIR="$HOME/.config/tempmail"
 EMAIL_LIST="$DATA_DIR/emails.json"
 CURRENT_EMAIL="$DATA_DIR/current_email"
+ENV_FILE="$DATA_DIR/.env"
 
 # Colors
 RED='\033[0;31m'
@@ -20,6 +21,13 @@ init_data_dir() {
     mkdir -p "$DATA_DIR"
     if [ ! -f "$EMAIL_LIST" ]; then
         echo "[]" > "$EMAIL_LIST"
+    fi
+}
+
+# Load environment variables
+load_env() {
+    if [ -f "$ENV_FILE" ]; then
+        export $(grep -v '^#' "$ENV_FILE" | xargs)
     fi
 }
 
@@ -271,6 +279,109 @@ show_current() {
     fi
 }
 
+# Send email
+send_email() {
+    load_env
+    
+    # Check if sending is configured
+    if [ -z "$SMTP_HOST" ] || [ -z "$SMTP_USER" ] || [ -z "$SMTP_PASS" ]; then
+        print_msg "$YELLOW" "⚠️  Email sending not configured!"
+        echo ""
+        print_msg "$BLUE" "To enable sending, create: $ENV_FILE"
+        print_msg "$BLUE" "With the following variables:"
+        echo "  SMTP_HOST=smtp.gmail.com"
+        echo "  SMTP_PORT=587"
+        echo "  SMTP_USER=your-email@gmail.com"
+        echo "  SMTP_PASS=your-app-password"
+        echo "  FROM_NAME=Your Name"
+        echo ""
+        print_msg "$BLUE" "💡 For Gmail: Use an App Password (https://myaccount.google.com/apppasswords)"
+        print_msg "$BLUE" "💡 Or use SendGrid, Mailgun, etc. (all have free tiers)"
+        return 1
+    fi
+    
+    local from_email=""
+    local to_email="$1"
+    local subject="$2"
+    local body="$3"
+    
+    # Get from email
+    if [ -f "$CURRENT_EMAIL" ]; then
+        from_email=$(cat "$CURRENT_EMAIL")
+    fi
+    
+    # Interactive mode if arguments missing
+    if [ -z "$to_email" ]; then
+        read -p "To: " to_email
+    fi
+    
+    if [ -z "$to_email" ]; then
+        print_msg "$RED" "❌ Recipient email is required"
+        return 1
+    fi
+    
+    if [ -z "$subject" ]; then
+        read -p "Subject: " subject
+    fi
+    
+    if [ -z "$body" ]; then
+        print_msg "$BLUE" "📝 Enter message body (press Ctrl+D when done):"
+        body=$(cat)
+    fi
+    
+    print_msg "$BLUE" "📤 Sending email..."
+    
+    # Use Python to send email (works on most systems)
+    python3 - <<PYEOF
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import os
+import sys
+
+try:
+    smtp_host = "${SMTP_HOST}"
+    smtp_port = int("${SMTP_PORT:-587}")
+    smtp_user = "${SMTP_USER}"
+    smtp_pass = "${SMTP_PASS}"
+    from_name = "${FROM_NAME:-Temporary Email}"
+    from_email = "${SMTP_USER}"  # Use SMTP user as sender
+    
+    msg = MIMEMultipart()
+    msg['From'] = f"{from_name} <{from_email}>"
+    msg['To'] = "${to_email}"
+    msg['Subject'] = "${subject}"
+    
+    # Add reply-to if using temp email
+    if "$from_email":
+        msg['Reply-To'] = "$from_email"
+    
+    body_text = """${body}"""
+    msg.attach(MIMEText(body_text, 'plain'))
+    
+    # Connect and send
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.send_message(msg)
+    
+    print("SUCCESS")
+except Exception as e:
+    print(f"ERROR: {str(e)}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+    
+    if [ $? -eq 0 ]; then
+        print_msg "$GREEN" "✅ Email sent successfully!"
+        print_msg "$GREEN" "   To: $to_email"
+        print_msg "$GREEN" "   Subject: $subject"
+    else
+        print_msg "$RED" "❌ Failed to send email"
+        print_msg "$YELLOW" "💡 Check your SMTP credentials in $ENV_FILE"
+        return 1
+    fi
+}
+
 # Clear all emails
 clear_all() {
     read -p "Are you sure you want to delete ALL emails? (yes/no): " confirm
@@ -296,6 +407,7 @@ Commands:
   delete <email>      Delete a specific email from your list
   inbox [email]       Check inbox (uses current email if not specified)
   read <id> [email]   Read a specific email by ID
+  send [to] [subject] [body]  Send an email (interactive if args omitted)
   use <email>         Set an email as current
   current             Show current email
   clear               Delete all emails from list
@@ -306,12 +418,15 @@ Examples:
   tempmail list
   tempmail inbox
   tempmail read 12345
+  tempmail send friend@example.com "Hello" "How are you?"
+  tempmail send  (interactive mode)
   tempmail delete user@domain.com
   tempmail use user@domain.com
 
 Notes:
   - Emails are temporary and will expire after some time
   - Check inbox regularly as old messages may be deleted
+  - To send emails, configure SMTP in $ENV_FILE (see README)
   - The service is free but has no guarantees
 
 HELP
@@ -336,6 +451,9 @@ main() {
             ;;
         read|show)
             read_email "$2" "$3"
+            ;;
+        send|compose)
+            send_email "$2" "$3" "$4"
             ;;
         use|set)
             set_current "$2"
