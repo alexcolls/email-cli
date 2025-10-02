@@ -3,7 +3,7 @@
 # Temporary Email CLI Manager
 # Manages temporary email addresses using various services
 
-VERSION="1.1.0"
+VERSION="0.1.0"
 DATA_DIR="$HOME/.config/tempmail"
 EMAIL_LIST="$DATA_DIR/emails.json"
 CURRENT_EMAIL="$DATA_DIR/current_email"
