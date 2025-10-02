@@ -5,6 +5,25 @@ All notable changes to Email CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2025-10-02
+
+### Changed
+- **FREE Default Configuration Documentation**
+  - Added prominent section to README emphasizing FREE 1secmail.com API
+  - Documented that receiving emails requires NO configuration
+  - Clarified SMTP configuration is ONLY needed for sending emails (optional)
+  - Updated `.env.sample` with "RECEIVING IS FREE" header
+  - Emphasized unlimited temporary emails with zero setup
+  - Highlighted instant inbox access without account/signup
+
+### Improved
+- **User Experience**
+  - Clearer messaging that receiving is completely free
+  - Better distinction between receiving (free, no config) and sending (optional, needs SMTP)
+  - Reduced confusion about SMTP requirements
+  - Enhanced documentation for quick start scenarios
+  - More accessible for users who only need temporary email receiving
+
 ## [0.1.0] - 2025-10-02
 
 ### Added

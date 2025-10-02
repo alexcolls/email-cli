@@ -5,6 +5,16 @@ A powerful command-line tool for creating and managing temporary/disposable emai
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#license)
 
+## 🆓 FREE Default Configuration
+
+**Receiving emails is COMPLETELY FREE - NO setup required!**
+- **FREE 1secmail.com API** - NO account or signup needed!
+- **Unlimited Temporary Emails** - Create as many as you want
+- **Instant Inbox Access** - Check emails immediately
+- **Zero Configuration** - Works out of the box for receiving emails
+
+**Optional:** SMTP configuration is ONLY needed if you want to SEND emails. Most users just need to receive, so you can skip SMTP setup entirely!
+
 ## Features
 
 ✨ **Create temporary email addresses** - Generate random or custom email names  
