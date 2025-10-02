@@ -644,7 +644,7 @@ show_menu() {
         echo ""
         print_msg "$BLUE" "╔═══════════════════════════════════════╗"
         print_msg "$BLUE" "║   📧 Temporary Email CLI Manager 📧   ║"
-        print_msg "$BLUE" "║          Version $VERSION              ║"
+        print_msg "$BLUE" "║          Version $VERSION             ║"
         print_msg "$BLUE" "╚═══════════════════════════════════════╝"
         echo ""
         
