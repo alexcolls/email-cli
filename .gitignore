@@ -1,3 +1,6 @@
+# Environment files
+.env
+
 # Config directory
 .config/
 
