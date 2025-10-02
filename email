@@ -3,7 +3,7 @@
 # Temporary Email CLI Manager
 # Manages temporary email addresses using various services
 
-VERSION="0.1.0"
+VERSION="0.1.2"
 DATA_DIR="$HOME/.config/tempmail"
 EMAIL_LIST="$DATA_DIR/emails.json"
 CURRENT_EMAIL="$DATA_DIR/current_email"
@@ -399,9 +399,10 @@ show_help() {
     cat << HELP
 Temporary Email CLI Manager v${VERSION}
 
-Usage: tempmail <command> [options]
+Usage: tempmail [command] [options]
 
 Commands:
+  menu                Show interactive menu (default)
   create              Create a new temporary email address
   list                List all your temporary emails
   delete <email>      Delete a specific email from your list
@@ -414,6 +415,8 @@ Commands:
   help                Show this help message
 
 Examples:
+  tempmail              (shows interactive menu)
+  tempmail menu
   tempmail create
   tempmail list
   tempmail inbox
@@ -432,11 +435,326 @@ Notes:
 HELP
 }
 
+# Interactive menu for selecting and deleting emails
+select_and_delete_email() {
+    local count=$(jq 'length' "$EMAIL_LIST")
+    
+    if [ "$count" -eq 0 ]; then
+        print_msg "$YELLOW" "No emails found. Create one first!"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    echo ""
+    print_msg "$BLUE" "📋 Select an email to delete:"
+    echo ""
+    
+    local emails=()
+    while IFS= read -r email; do
+        emails+=("$email")
+    done < <(jq -r '.[].email' "$EMAIL_LIST")
+    
+    PS3="Enter number (0 to cancel): "
+    select email_choice in "${emails[@]}"; do
+        if [ -n "$email_choice" ]; then
+            read -p "Delete $email_choice? (y/n): " confirm
+            if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                delete_email "$email_choice"
+            else
+                print_msg "$YELLOW" "Operation cancelled"
+            fi
+            read -p "Press Enter to continue..."
+            break
+        elif [ "$REPLY" = "0" ]; then
+            break
+        else
+            print_msg "$RED" "Invalid selection"
+        fi
+    done
+}
+
+# Interactive menu for selecting email to set as current
+select_and_use_email() {
+    local count=$(jq 'length' "$EMAIL_LIST")
+    
+    if [ "$count" -eq 0 ]; then
+        print_msg "$YELLOW" "No emails found. Create one first!"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    echo ""
+    print_msg "$BLUE" "📋 Select an email to use:"
+    echo ""
+    
+    local emails=()
+    while IFS= read -r email; do
+        emails+=("$email")
+    done < <(jq -r '.[].email' "$EMAIL_LIST")
+    
+    PS3="Enter number (0 to cancel): "
+    select email_choice in "${emails[@]}"; do
+        if [ -n "$email_choice" ]; then
+            set_current "$email_choice"
+            read -p "Press Enter to continue..."
+            break
+        elif [ "$REPLY" = "0" ]; then
+            break
+        else
+            print_msg "$RED" "Invalid selection"
+        fi
+    done
+}
+
+# Interactive menu for checking specific email inbox
+select_and_check_inbox() {
+    local count=$(jq 'length' "$EMAIL_LIST")
+    
+    if [ "$count" -eq 0 ]; then
+        print_msg "$YELLOW" "No emails found. Create one first!"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    echo ""
+    print_msg "$BLUE" "📋 Select an email to check:"
+    echo ""
+    
+    local current=""
+    if [ -f "$CURRENT_EMAIL" ]; then
+        current=$(cat "$CURRENT_EMAIL")
+    fi
+    
+    local emails=()
+    if [ -n "$current" ]; then
+        emails=("$current (current)")
+    fi
+    
+    while IFS= read -r email; do
+        if [ "$email" != "$current" ]; then
+            emails+=("$email")
+        fi
+    done < <(jq -r '.[].email' "$EMAIL_LIST")
+    
+    PS3="Enter number (0 to cancel): "
+    select email_choice in "${emails[@]}"; do
+        if [ -n "$email_choice" ]; then
+            # Remove " (current)" suffix if present
+            email_choice=$(echo "$email_choice" | sed 's/ (current)$//')
+            check_inbox "$email_choice"
+            echo ""
+            read -p "Press Enter to continue..."
+            break
+        elif [ "$REPLY" = "0" ]; then
+            break
+        else
+            print_msg "$RED" "Invalid selection"
+        fi
+    done
+}
+
+# Interactive menu for reading email messages
+read_email_interactive() {
+    local email=""
+    
+    # First, get the email to check
+    local count=$(jq 'length' "$EMAIL_LIST")
+    
+    if [ "$count" -eq 0 ]; then
+        print_msg "$YELLOW" "No emails found. Create one first!"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    if [ -f "$CURRENT_EMAIL" ]; then
+        email=$(cat "$CURRENT_EMAIL")
+        print_msg "$BLUE" "Using current email: $email"
+    else
+        echo ""
+        print_msg "$BLUE" "📋 Select an email:"
+        echo ""
+        
+        local emails=()
+        while IFS= read -r e; do
+            emails+=("$e")
+        done < <(jq -r '.[].email' "$EMAIL_LIST")
+        
+        PS3="Enter number (0 to cancel): "
+        select email_choice in "${emails[@]}"; do
+            if [ -n "$email_choice" ]; then
+                email="$email_choice"
+                break
+            elif [ "$REPLY" = "0" ]; then
+                return
+            else
+                print_msg "$RED" "Invalid selection"
+            fi
+        done
+    fi
+    
+    # Extract username and domain
+    local username=$(echo "$email" | cut -d'@' -f1)
+    local domain=$(echo "$email" | cut -d'@' -f2)
+    
+    echo ""
+    print_msg "$BLUE" "📬 Fetching messages for: $email"
+    
+    # Fetch messages
+    local messages=$(curl -s "https://www.1secmail.com/api/v1/?action=getMessages&login=$username&domain=$domain")
+    
+    local msg_count=$(echo "$messages" | jq 'length')
+    
+    if [ "$msg_count" -eq 0 ]; then
+        print_msg "$YELLOW" "📭 No messages found"
+        read -p "Press Enter to continue..."
+        return
+    fi
+    
+    print_msg "$GREEN" "📨 Found $msg_count message(s)"
+    echo ""
+    
+    # Build message list for selection
+    local msg_items=()
+    while IFS='|' read -r id from subject date; do
+        msg_items+=("ID:$id | From: $from | Subject: $subject")
+    done < <(echo "$messages" | jq -r '.[] | "\(.id)|\(.from)|\(.subject)|\(.date)"')
+    
+    PS3="Enter message number to read (0 to cancel): "
+    select msg_choice in "${msg_items[@]}"; do
+        if [ -n "$msg_choice" ]; then
+            # Extract ID from the choice
+            local msg_id=$(echo "$msg_choice" | sed 's/ID:\([0-9]*\).*/\1/')
+            echo ""
+            read_email "$msg_id" "$email"
+            echo ""
+            read -p "Press Enter to continue..."
+            break
+        elif [ "$REPLY" = "0" ]; then
+            break
+        else
+            print_msg "$RED" "Invalid selection"
+        fi
+    done
+}
+
+# Main interactive menu
+show_menu() {
+    while true; do
+        clear
+        echo ""
+        print_msg "$BLUE" "╔═══════════════════════════════════════╗"
+        print_msg "$BLUE" "║   📧 Temporary Email CLI Manager 📧   ║"
+        print_msg "$BLUE" "║          Version $VERSION              ║"
+        print_msg "$BLUE" "╚═══════════════════════════════════════╝"
+        echo ""
+        
+        # Show current email if set
+        if [ -f "$CURRENT_EMAIL" ]; then
+            local current=$(cat "$CURRENT_EMAIL")
+            print_msg "$GREEN" "📌 Current: $current"
+            echo ""
+        fi
+        
+        print_msg "$YELLOW" "Available Options:"
+        echo ""
+        echo "  1) 🎯 Create new temporary email"
+        echo "  2) 📋 List all emails"
+        echo "  3) 📬 Check inbox (current email)"
+        echo "  4) 📪 Check specific email inbox"
+        echo "  5) 📖 Read email message"
+        echo "  6) 📤 Send email"
+        echo "  7) ⚙️  Set current email"
+        echo "  8) 📌 Show current email"
+        echo "  9) 🗑️  Delete email"
+        echo " 10) 🧹 Clear all emails"
+        echo " 11) ❓ Show help"
+        echo "  0) 👋 Exit"
+        echo ""
+        
+        read -p "Select option [0-11]: " choice
+        
+        case $choice in
+            1)
+                echo ""
+                create_email
+                echo ""
+                read -p "Press Enter to continue..."
+                ;;
+            2)
+                echo ""
+                list_emails
+                echo ""
+                read -p "Press Enter to continue..."
+                ;;
+            3)
+                echo ""
+                check_inbox
+                echo ""
+                read -p "Press Enter to continue..."
+                ;;
+            4)
+                select_and_check_inbox
+                ;;
+            5)
+                read_email_interactive
+                ;;
+            6)
+                echo ""
+                send_email
+                echo ""
+                read -p "Press Enter to continue..."
+                ;;
+            7)
+                select_and_use_email
+                ;;
+            8)
+                echo ""
+                show_current
+                echo ""
+                read -p "Press Enter to continue..."
+                ;;
+            9)
+                select_and_delete_email
+                ;;
+            10)
+                echo ""
+                clear_all
+                echo ""
+                read -p "Press Enter to continue..."
+                ;;
+            11)
+                echo ""
+                show_help
+                echo ""
+                read -p "Press Enter to continue..."
+                ;;
+            0)
+                echo ""
+                print_msg "$GREEN" "👋 Goodbye!"
+                exit 0
+                ;;
+            *)
+                print_msg "$RED" "❌ Invalid option. Please try again."
+                sleep 1
+                ;;
+        esac
+    done
+}
+
 # Main function
 main() {
     init_data_dir
     
-    case "${1:-help}" in
+    # If no arguments, show interactive menu
+    if [ $# -eq 0 ]; then
+        show_menu
+        exit 0
+    fi
+    
+    case "${1}" in
+        menu|interactive)
+            show_menu
+            ;;
         create)
             create_email
             ;;

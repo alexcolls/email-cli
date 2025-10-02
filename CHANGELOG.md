@@ -5,6 +5,47 @@ All notable changes to Email CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2025-10-02
+
+### Added
+- 🎮 **Interactive Menu System**
+  - Full interactive menu interface when running without arguments
+  - Number-based menu navigation (0-11)
+  - Visual menu with emojis and colored headers
+  - Current email display in menu header
+  - Press Enter to continue prompts for better flow
+  - Smart email selection menus with numbered choices
+  - Interactive inbox browser with message selection
+  - Interactive email deletion with confirmation
+  - Interactive email switching interface
+  - Clear screen between menu operations for clean UX
+- 📋 **Enhanced Selection Menus**
+  - `select_and_delete_email()` - Interactive email deletion
+  - `select_and_use_email()` - Interactive email switching
+  - `select_and_check_inbox()` - Select specific inbox to check
+  - `read_email_interactive()` - Browse and read messages interactively
+- 🎯 **New Command Options**
+  - `email` (no args) - Launch interactive menu (default)
+  - `email menu` - Explicitly launch interactive menu
+  - `email interactive` - Alternative menu command
+  - All original CLI commands still work as before
+
+### Changed
+- Default behavior now shows interactive menu instead of help
+- Menu loops until user explicitly exits (option 0)
+- All menu options include confirmation/continuation prompts
+- Help text updated to reflect new default behavior
+
+### Improved
+- **User Experience**
+  - No need to remember command syntax for common operations
+  - Visual menu makes all features discoverable
+  - Number selection is faster than typing commands
+  - Better for users unfamiliar with CLI tools
+  - Current email always visible in menu
+  - Clean interface with box drawing characters
+  - Consistent emoji indicators throughout menu
+
 ## [0.1.1] - 2025-10-02
 
 ### Changed
