@@ -2,6 +2,9 @@
 
 A powerful command-line tool for creating and managing temporary/disposable email addresses.
 
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](#license)
+
 ## Features
 
 ✨ **Create temporary email addresses** - Generate random or custom email names  
@@ -274,11 +277,9 @@ sudo apt-get install curl jq python3
 
 ## Version
 
-Current version: **1.1.0**
+Current version: **0.1.0**
 
-### Changelog
-- **v1.1.0**: Added email sending with SMTP support, partial matching for `use` command
-- **v1.0.0**: Initial release with receive-only functionality
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history and release notes.
 
 ## License
 
